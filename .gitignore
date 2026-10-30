@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+converted_audio/
+*.wav
+*.mp3
+*.m4a
+*.m4r
+*.aiff
+*.caf
+*.flac
+*.ogg
+*.opus
+*.zip

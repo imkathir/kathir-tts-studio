@@ -1,0 +1,6 @@
+{
+  "name": "EmberAudio - Universal Text to Audio Format Converter",
+  "description": "Convert text to speech across all major audio formats including MP3 for Android, OGG, WAV, AAC, FLAC, OPUS, and AIFF with customizable voices and system presets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
