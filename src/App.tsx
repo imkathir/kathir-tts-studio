@@ -68,26 +68,54 @@ export default function App() {
         : 'Synthesizing speech from text...'
     );
 
+    const isGitHubPages = window.location.hostname.includes('github.io');
+    const customBackend = localStorage.getItem('kathir_tts_backend_url') || '';
+
+    // On GitHub Pages (without custom backend), run the real client-side speech engine directly
+    // This prevents the 405 Method Not Allowed error from GitHub Pages static servers
+    if (isGitHubPages && !customBackend) {
+      setConversionProgress('Synthesizing speech via Google Neural Voice Engine...');
+      try {
+        const clientJob = createStaticPagesJob(params);
+        setCurrentJob(clientJob);
+        audioService.currentJob = clientJob;
+
+        const defaultFmt = clientJob.formats.find((f) => f.format === 'mp3') || clientJob.formats[0];
+        if (defaultFmt) {
+          setActiveFormat(defaultFmt);
+          audioService.activeFormat = defaultFmt;
+        }
+      } catch (err: any) {
+        console.error('Client speech synthesis error:', err);
+      } finally {
+        setIsConverting(false);
+        setConversionProgress('');
+      }
+      return;
+    }
+
+    // Otherwise call backend server (local Express server or user-configured custom backend)
+    const endpoint = customBackend
+      ? `${customBackend.replace(/\/+$/, '')}/api/convert`
+      : '/api/convert';
+
     try {
-      const res = await fetch('/api/convert', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params),
       });
 
       if (!res.ok) {
-        if (res.status === 404 || window.location.hostname.includes('github.io')) {
-          const fallbackData = createStaticPagesJob(params);
-          setCurrentJob(fallbackData);
-          audioService.currentJob = fallbackData;
-          if (fallbackData.formats[0]) {
-            setActiveFormat(fallbackData.formats[0]);
-            audioService.activeFormat = fallbackData.formats[0];
-          }
-          return;
+        const clientJob = createStaticPagesJob(params);
+        setCurrentJob(clientJob);
+        audioService.currentJob = clientJob;
+        const defaultFmt = clientJob.formats.find((f) => f.format === 'mp3') || clientJob.formats[0];
+        if (defaultFmt) {
+          setActiveFormat(defaultFmt);
+          audioService.activeFormat = defaultFmt;
         }
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Speech conversion failed');
+        return;
       }
 
       setConversionProgress(
@@ -104,18 +132,15 @@ export default function App() {
         audioService.activeFormat = defaultFmt;
       }
     } catch (err: any) {
-      if (window.location.hostname.includes('github.io')) {
-        const fallbackData = createStaticPagesJob(params);
-        setCurrentJob(fallbackData);
-        audioService.currentJob = fallbackData;
-        if (fallbackData.formats[0]) {
-          setActiveFormat(fallbackData.formats[0]);
-          audioService.activeFormat = fallbackData.formats[0];
-        }
-        return;
+      console.warn('Backend server unreachable, falling back to client-side speech engine:', err);
+      const clientJob = createStaticPagesJob(params);
+      setCurrentJob(clientJob);
+      audioService.currentJob = clientJob;
+      const defaultFmt = clientJob.formats.find((f) => f.format === 'mp3') || clientJob.formats[0];
+      if (defaultFmt) {
+        setActiveFormat(defaultFmt);
+        audioService.activeFormat = defaultFmt;
       }
-      console.error('Conversion failed:', err);
-      alert(err?.message || 'Failed to convert audio');
     } finally {
       setIsConverting(false);
       setConversionProgress('');

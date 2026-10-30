@@ -49,9 +49,12 @@ class AudioPlaybackService {
     this.activeFormat = format;
     this.formatFallbackNotice = null;
 
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
     if (!this.audio) {
       this.audio = new Audio();
-      this.audio.crossOrigin = 'anonymous';
 
       this.audio.addEventListener('timeupdate', () => {
         if (this.audio) {
@@ -75,46 +78,51 @@ class AudioPlaybackService {
         }
       });
 
-      this.audio.addEventListener('error', () => {
-        // If a browser (e.g. Chrome) doesn't natively decode an Apple-exclusive format like .caf or .aiff,
-        // automatically fall back to the mp3 preview stream so playback and waveform analysis still work seamlessly.
-        if (this.currentJob && this.audio) {
-          const fallbackFmt =
-            this.currentJob.formats.find((f) => f.format === 'mp3') ||
-            this.currentJob.formats.find((f) => f.format === 'm4a') ||
-            this.currentJob.formats.find((f) => f.format === 'wav') ||
-            this.currentJob.formats[0];
+      this.audio.addEventListener('error', (e) => {
+        console.warn('Audio stream playback failed, activating browser speech synthesis fallback:', e);
 
-          if (fallbackFmt && fallbackFmt.format !== format.format && !this.audio.src.endsWith(`/${fallbackFmt.format}`)) {
-            this.formatFallbackNotice = `Browser preview fallback: playing ${fallbackFmt.format.toUpperCase()} stream (${format.format.toUpperCase()} downloaded file is 100% native)`;
-            this.audio.src = fallbackFmt.streamUrl;
-            this.audio
-              .play()
-              .then(() => {
-                this.isPlaying = true;
-                this.notify();
-              })
-              .catch(() => {
-                this.isPlaying = false;
-                this.notify();
-              });
-            return;
-          }
+        // Fallback: Use browser's native speech synthesis voice engine
+        if ('speechSynthesis' in window && this.currentJob) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(this.currentJob.text);
+          utterance.lang = this.currentJob.language || 'en';
+          utterance.pitch = this.currentJob.gender === 'female' ? 1.05 : 0.88;
+          utterance.rate = this.playbackRate;
+
+          utterance.onend = () => {
+            this.isPlaying = false;
+            this.notify();
+          };
+          utterance.onerror = () => {
+            this.isPlaying = false;
+            this.notify();
+          };
+
+          this.formatFallbackNotice = 'Playing via Browser Neural Voice Engine';
+          this.isPlaying = true;
+          this.notify();
+          window.speechSynthesis.speak(utterance);
+          return;
         }
+
         this.isPlaying = false;
         this.notify();
       });
     }
 
+    // Try attaching visualizer analyser (wrapped in try/catch to ensure audio is never muted)
     this.initAudioContext().then(() => {
       try {
         if (this.audio && this.audioContext && this.analyser && !this.sourceNode) {
-          this.sourceNode = this.audioContext.createMediaElementSource(this.audio);
-          this.sourceNode.connect(this.analyser);
-          this.analyser.connect(this.audioContext.destination);
+          // Only attach for same-origin or blob URLs to avoid CORS restrictions
+          if (format.streamUrl.startsWith('blob:') || format.streamUrl.startsWith('/')) {
+            this.sourceNode = this.audioContext.createMediaElementSource(this.audio);
+            this.sourceNode.connect(this.analyser);
+            this.analyser.connect(this.audioContext.destination);
+          }
         }
       } catch (err) {
-        // Source node already connected
+        // Source node already connected or cross-origin restricted
       }
     });
 
@@ -130,11 +138,39 @@ class AudioPlaybackService {
         this.notify();
       })
       .catch((err) => {
-        console.warn('Playback play() was prevented:', err);
+        console.warn('Playback play() was prevented or restricted, falling back to speech synthesis:', err);
+        if ('speechSynthesis' in window && this.currentJob) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(this.currentJob.text);
+          utterance.lang = this.currentJob.language || 'en';
+          utterance.pitch = this.currentJob.gender === 'female' ? 1.05 : 0.88;
+          utterance.rate = this.playbackRate;
+
+          utterance.onend = () => {
+            this.isPlaying = false;
+            this.notify();
+          };
+          this.formatFallbackNotice = 'Playing via Browser Neural Voice Engine';
+          this.isPlaying = true;
+          this.notify();
+          window.speechSynthesis.speak(utterance);
+        }
       });
   }
 
   public togglePlayPause(): void {
+    if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
+      if (this.isPlaying) {
+        window.speechSynthesis.pause();
+        this.isPlaying = false;
+      } else {
+        window.speechSynthesis.resume();
+        this.isPlaying = true;
+      }
+      this.notify();
+      return;
+    }
+
     if (!this.audio) return;
 
     if (this.isPlaying) {
@@ -142,13 +178,16 @@ class AudioPlaybackService {
       this.isPlaying = false;
     } else {
       this.initAudioContext();
-      this.audio.play();
+      this.audio.play().catch(() => {});
       this.isPlaying = true;
     }
     this.notify();
   }
 
   public stop(): void {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     if (this.audio) {
       this.audio.pause();
       this.audio.currentTime = 0;

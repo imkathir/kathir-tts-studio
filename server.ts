@@ -262,22 +262,55 @@ function detectLanguageCode(text: string): { code: string; name: string } {
   if (/[\u4E00-\u9FFF]/.test(text)) return { code: 'zh', name: 'Chinese' };
   if (/[\u0400-\u04FF]/.test(text)) return { code: 'ru', name: 'Russian' };
 
-  const lower = ' ' + text.toLowerCase().replace(/[^a-zàâçéèêëîïôûùüœáíóúñãõäöüß ]/g, ' ') + ' ';
-  if (/[áéíóúüñ¿¡]/.test(lower) || /\b(el|la|los|las|un|una|en|de|que|por|para|con|hola|gracias|estás|amigo|tiempo)\b/.test(lower)) {
-    return { code: 'es', name: 'Spanish' };
+  const lower = ' ' + text.toLowerCase().replace(/[^a-z0-9áéíóúüñãõäöüßçàâèêëîïôûùœ ]/g, ' ') + ' ';
+  if (
+    /\b(vanakkam|nanri|epdi|irukinga|irukeenga|thambi|machan|romba|nalla|solunga|theriyuma|vanga|ponga|tamil|chennai)\b/.test(
+      lower
+    )
+  ) {
+    return { code: 'ta', name: 'Tamil' };
   }
-  if (/[àâçèêëîïôûùœ]/.test(lower) || /\b(le|la|les|un|une|des|et|est|dans|pour|avec|bonjour|merci|vous|nous|bien)\b/.test(lower)) {
-    return { code: 'fr', name: 'French' };
+  if (
+    /\b(namaste|namaskar|kaise\s+ho|kya\s+haal|dhanyawad|shukriya|bahut|accha|theek|bhai|bhaiya)\b/.test(
+      lower
+    )
+  ) {
+    return { code: 'hi', name: 'Hindi' };
   }
-  if (/[äöüß]/.test(lower) || /\b(der|die|das|und|ist|nicht|mit|für|auf|hallo|danke|bitte|guten|morgen)\b/.test(lower)) {
-    return { code: 'de', name: 'German' };
-  }
-  if (/\b(il|lo|la|i|gli|le|un|uno|una|di|da|in|con|su|per|tra|fra|ciao|grazie|come|stai|bene)\b/.test(lower)) {
-    return { code: 'it', name: 'Italian' };
-  }
-  if (/[ãõ]/.test(lower) || /\b(o|a|os|as|um|uma|do|da|dos|das|no|na|em|olá|obrigado|muito|você)\b/.test(lower)) {
-    return { code: 'pt', name: 'Portuguese' };
-  }
+
+  let scoreEn = 0, scoreEs = 0, scoreFr = 0, scoreDe = 0, scoreIt = 0, scorePt = 0;
+  const enMatches = lower.match(/\b(the|this|that|with|have|from|they|which|welcome|convert|speech|audio|voice|studio|text|natural|clear|files)\b/g);
+  if (enMatches) scoreEn += enMatches.length * 2;
+
+  if (/[áéíóúüñ¿¡]/.test(lower)) scoreEs += 3;
+  const esMatches = lower.match(/\b(hola|gracias|amigo|amigos|tiempo|buenos|días|buenas|tardes|noches|por\s+favor|estoy|estás|español|bienvenido)\b/g);
+  if (esMatches) scoreEs += esMatches.length * 2;
+
+  if (/[çèêëàâîïôûùœ]/.test(lower)) scoreFr += 3;
+  const frMatches = lower.match(/\b(bonjour|merci|s'il\s+vous\s+plaît|français|avec|dans|nous|vous|cette|aussi|toujours|très|bienvenue)\b/g);
+  if (frMatches) scoreFr += frMatches.length * 2;
+
+  if (/[äöüß]/.test(lower)) scoreDe += 3;
+  const deMatches = lower.match(/\b(hallo|danke|bitte|deutsch|nicht|guten|morgen|abend|immer|wieder|willkommen)\b/g);
+  if (deMatches) scoreDe += deMatches.length * 2;
+
+  const itMatches = lower.match(/\b(ciao|grazie|prego|italiano|buongiorno|buonasera|arrivederci|perché|quando|sempre|ancora|benvenuto)\b/g);
+  if (itMatches) scoreIt += itMatches.length * 2;
+
+  if (/[ãõ]/.test(lower)) scorePt += 3;
+  const ptMatches = lower.match(/\b(olá|obrigado|obrigada|português|muito|você|vocês|também|depois|sempre|agora|bom\s+dia|bem-vindo)\b/g);
+  if (ptMatches) scorePt += ptMatches.length * 2;
+
+  const scores = [
+    { code: 'en', name: 'English', score: scoreEn },
+    { code: 'es', name: 'Spanish', score: scoreEs },
+    { code: 'fr', name: 'French', score: scoreFr },
+    { code: 'de', name: 'German', score: scoreDe },
+    { code: 'it', name: 'Italian', score: scoreIt },
+    { code: 'pt', name: 'Portuguese', score: scorePt },
+  ];
+  scores.sort((a, b) => b.score - a.score);
+  if (scores[0].score > 0) return { code: scores[0].code, name: scores[0].name };
 
   return { code: 'en', name: 'English' };
 }

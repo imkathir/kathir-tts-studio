@@ -290,11 +290,13 @@ export const AudioInputPanel: React.FC<AudioInputPanelProps> = ({
   const handleConvert = (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim() || isConverting || selectedFormats.length === 0) return;
+    const resolvedLang = selectedLanguage === 'auto' ? autoDetectedLang.code : selectedLanguage;
     onConvert({
       text,
       voice,
       gender,
-      language: selectedLanguage,
+      language: resolvedLang,
+      languageName: activeLanguageInfo.name,
       speechStyle,
       sampleRate,
       bitrate,
