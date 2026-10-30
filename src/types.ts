@@ -23,6 +23,7 @@ export interface FormatOption {
 
 export interface AudioJob {
   jobId: string;
+  id?: string;
   text: string;
   voice: string;
   gender: 'female' | 'male';

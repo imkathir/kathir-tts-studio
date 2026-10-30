@@ -17,6 +17,12 @@ class AudioPlaybackService {
   public currentJob: AudioJob | null = null;
   public formatFallbackNotice: string | null = null;
 
+  // SpeechSynthesis state for client-side static playback
+  private isSpeechActive: boolean = false;
+  private speechTimer: any = null;
+  private speechChunks: string[] = [];
+  private currentChunkIndex: number = 0;
+
   public subscribe(cb: () => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
@@ -48,11 +54,21 @@ class AudioPlaybackService {
     this.currentJob = job;
     this.activeFormat = format;
     this.formatFallbackNotice = null;
+    this.stop();
 
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+    // Check if this is a server stream URL (e.g. /api/stream/...)
+    const isServerStream = format.streamUrl.startsWith('/api/');
+
+    if (isServerStream) {
+      this.playHtmlAudio(job, format);
+    } else {
+      // In static client mode (GitHub Pages), use browser SpeechSynthesis
+      // so the user hears authentic spoken speech in the detected language!
+      this.playSpeechSynthesis(job);
     }
+  }
 
+  private playHtmlAudio(job: AudioJob, format: FormatItem): void {
     if (!this.audio) {
       this.audio = new Audio();
 
@@ -71,7 +87,12 @@ class AudioPlaybackService {
       });
 
       this.audio.addEventListener('ended', () => {
-        if (!this.isLooping) {
+        if (this.isLooping) {
+          if (this.audio) {
+            this.audio.currentTime = 0;
+            this.audio.play().catch(() => {});
+          }
+        } else {
           this.isPlaying = false;
           this.currentTime = 0;
           this.notify();
@@ -79,42 +100,16 @@ class AudioPlaybackService {
       });
 
       this.audio.addEventListener('error', (e) => {
-        console.warn('Audio stream playback failed, activating browser speech synthesis fallback:', e);
-
-        // Fallback: Use browser's native speech synthesis voice engine
-        if ('speechSynthesis' in window && this.currentJob) {
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance(this.currentJob.text);
-          utterance.lang = this.currentJob.language || 'en';
-          utterance.pitch = this.currentJob.gender === 'female' ? 1.05 : 0.88;
-          utterance.rate = this.playbackRate;
-
-          utterance.onend = () => {
-            this.isPlaying = false;
-            this.notify();
-          };
-          utterance.onerror = () => {
-            this.isPlaying = false;
-            this.notify();
-          };
-
-          this.formatFallbackNotice = 'Playing via Browser Neural Voice Engine';
-          this.isPlaying = true;
-          this.notify();
-          window.speechSynthesis.speak(utterance);
-          return;
+        console.warn('Audio stream error, falling back to client speech synthesis:', e);
+        if (this.currentJob) {
+          this.playSpeechSynthesis(this.currentJob);
         }
-
-        this.isPlaying = false;
-        this.notify();
       });
     }
 
-    // Try attaching visualizer analyser (wrapped in try/catch to ensure audio is never muted)
     this.initAudioContext().then(() => {
       try {
         if (this.audio && this.audioContext && this.analyser && !this.sourceNode) {
-          // Only attach for same-origin or blob URLs to avoid CORS restrictions
           if (format.streamUrl.startsWith('blob:') || format.streamUrl.startsWith('/')) {
             this.sourceNode = this.audioContext.createMediaElementSource(this.audio);
             this.sourceNode.connect(this.analyser);
@@ -122,7 +117,7 @@ class AudioPlaybackService {
           }
         }
       } catch (err) {
-        // Source node already connected or cross-origin restricted
+        // already connected
       }
     });
 
@@ -138,40 +133,141 @@ class AudioPlaybackService {
         this.notify();
       })
       .catch((err) => {
-        console.warn('Playback play() was prevented or restricted, falling back to speech synthesis:', err);
-        if ('speechSynthesis' in window && this.currentJob) {
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance(this.currentJob.text);
-          utterance.lang = this.currentJob.language || 'en';
-          utterance.pitch = this.currentJob.gender === 'female' ? 1.05 : 0.88;
-          utterance.rate = this.playbackRate;
-
-          utterance.onend = () => {
-            this.isPlaying = false;
-            this.notify();
-          };
-          this.formatFallbackNotice = 'Playing via Browser Neural Voice Engine';
-          this.isPlaying = true;
-          this.notify();
-          window.speechSynthesis.speak(utterance);
+        console.warn('Audio play() failed, falling back to speech synthesis:', err);
+        if (this.currentJob) {
+          this.playSpeechSynthesis(this.currentJob);
         }
       });
   }
 
+  private playSpeechSynthesis(job: AudioJob): void {
+    if (!('speechSynthesis' in window)) {
+      console.warn('SpeechSynthesis is not supported in this browser.');
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    this.stopSpeechTimer();
+
+    this.isSpeechActive = true;
+    this.duration = job.durationSeconds || Math.max(2, Math.round(job.text.trim().split(/\s+/).length * 0.42));
+    this.currentTime = 0;
+    this.isPlaying = true;
+    this.notify();
+
+    // Split text into chunks to bypass Chrome's 15-second speech synthesis pause bug
+    const rawChunks = job.text.match(/[^.!?\n]+[.!?\n]*/g) || [job.text];
+    this.speechChunks = rawChunks.map((s) => s.trim()).filter(Boolean);
+    if (this.speechChunks.length === 0) {
+      this.speechChunks = [job.text];
+    }
+    this.currentChunkIndex = 0;
+
+    this.startSpeechTimer();
+    this.speakNextChunk(job);
+  }
+
+  private speakNextChunk(job: AudioJob): void {
+    if (!this.isSpeechActive || this.currentChunkIndex >= this.speechChunks.length) {
+      if (this.isLooping && this.isSpeechActive) {
+        this.currentChunkIndex = 0;
+        this.currentTime = 0;
+        this.speakNextChunk(job);
+      } else {
+        this.isPlaying = false;
+        this.isSpeechActive = false;
+        this.stopSpeechTimer();
+        this.currentTime = 0;
+        this.notify();
+      }
+      return;
+    }
+
+    const chunkText = this.speechChunks[this.currentChunkIndex];
+    const utterance = new SpeechSynthesisUtterance(chunkText);
+
+    // Language resolution
+    const langCode = (job.language || 'en').toLowerCase().split('-')[0];
+    utterance.lang = job.language || 'en-US';
+    utterance.rate = this.playbackRate;
+    utterance.pitch = job.gender === 'female' ? 1.05 : 0.88;
+    utterance.volume = this.volume;
+
+    // Best matching voice search
+    const voices = window.speechSynthesis.getVoices();
+    const langMatches = voices.filter((v) => v.lang.toLowerCase().startsWith(langCode));
+
+    if (langMatches.length > 0) {
+      if (job.gender === 'female') {
+        const femaleVoice = langMatches.find((v) =>
+          /female|zira|samantha|karen|victoria|moira|fiona|susan|monica|kalpana|geeta/i.test(v.name)
+        );
+        utterance.voice = femaleVoice || langMatches[0];
+      } else {
+        const maleVoice = langMatches.find((v) =>
+          /male|david|mark|george|rishi|daniel|alex|fred|thomas|diego|jorge|valluvar/i.test(v.name)
+        );
+        utterance.voice = maleVoice || langMatches[0];
+      }
+    }
+
+    utterance.onend = () => {
+      this.currentChunkIndex++;
+      if (this.isSpeechActive) {
+        this.speakNextChunk(job);
+      }
+    };
+
+    utterance.onerror = (e) => {
+      console.warn('Speech synthesis utterance error:', e);
+      this.currentChunkIndex++;
+      if (this.isSpeechActive) {
+        this.speakNextChunk(job);
+      }
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }
+
+  private startSpeechTimer(): void {
+    this.stopSpeechTimer();
+    const intervalMs = 100;
+    this.speechTimer = setInterval(() => {
+      if (this.isPlaying && this.isSpeechActive) {
+        this.currentTime = Math.min(this.duration, this.currentTime + (intervalMs / 1000) * this.playbackRate);
+        this.notify();
+      }
+    }, intervalMs);
+  }
+
+  private stopSpeechTimer(): void {
+    if (this.speechTimer) {
+      clearInterval(this.speechTimer);
+      this.speechTimer = null;
+    }
+  }
+
   public togglePlayPause(): void {
-    if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
+    if (this.isSpeechActive) {
       if (this.isPlaying) {
         window.speechSynthesis.pause();
         this.isPlaying = false;
+        this.stopSpeechTimer();
       } else {
         window.speechSynthesis.resume();
         this.isPlaying = true;
+        this.startSpeechTimer();
       }
       this.notify();
       return;
     }
 
-    if (!this.audio) return;
+    if (!this.audio) {
+      if (this.currentJob && this.activeFormat) {
+        this.playFormat(this.currentJob, this.activeFormat);
+      }
+      return;
+    }
 
     if (this.isPlaying) {
       this.audio.pause();
@@ -185,24 +281,29 @@ class AudioPlaybackService {
   }
 
   public stop(): void {
+    this.isSpeechActive = false;
+    this.stopSpeechTimer();
+
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+
     if (this.audio) {
       this.audio.pause();
       this.audio.currentTime = 0;
-      this.currentTime = 0;
-      this.isPlaying = false;
-      this.notify();
     }
+
+    this.currentTime = 0;
+    this.isPlaying = false;
+    this.notify();
   }
 
   public seek(seconds: number): void {
-    if (this.audio) {
-      this.audio.currentTime = Math.max(0, Math.min(seconds, this.duration || 100));
-      this.currentTime = this.audio.currentTime;
-      this.notify();
+    this.currentTime = Math.max(0, Math.min(seconds, this.duration || 100));
+    if (this.audio && !this.isSpeechActive) {
+      this.audio.currentTime = this.currentTime;
     }
+    this.notify();
   }
 
   public setVolume(vol: number): void {

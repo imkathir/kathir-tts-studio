@@ -40,7 +40,9 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const render = () => {
+    let startTime = performance.now();
+
+    const render = (now: number) => {
       const analyser = audioService.getAnalyser();
       const width = canvas.width;
       const height = canvas.height;
@@ -53,15 +55,26 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
       const borderColor = computed.getPropertyValue('--border-color').trim() || '#263238';
 
       ctx.clearRect(0, 0, width, height);
-
       ctx.fillStyle = bgInput;
       ctx.fillRect(0, 0, width, height);
 
-      if (analyser && isPlaying) {
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        analyser.getByteFrequencyData(dataArray);
+      let hasAnalyserAudio = false;
+      let dataArray: Uint8Array | null = null;
+      let bufferLength = 64;
 
+      if (analyser && isPlaying) {
+        bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        (analyser as any).getByteFrequencyData(dataArray);
+        for (let i = 0; i < bufferLength; i++) {
+          if (dataArray[i] > 0) {
+            hasAnalyserAudio = true;
+            break;
+          }
+        }
+      }
+
+      if (isPlaying && hasAnalyserAudio && dataArray) {
         const barWidth = (width / bufferLength) * 2.2;
         let x = 0;
 
@@ -77,20 +90,45 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
 
           x += barWidth;
         }
+      } else if (isPlaying) {
+        // Dynamic voice synthesis rhythm animation
+        const elapsed = (now - startTime) * 0.004;
+        const barCount = 52;
+        const barWidth = width / barCount;
+
+        for (let i = 0; i < barCount; i++) {
+          const formant1 = Math.sin(elapsed * 2.5 + i * 0.22);
+          const formant2 = Math.cos(elapsed * 1.8 + i * 0.35);
+          const vocalMod = (Math.sin(elapsed * 1.2) * 0.3 + 0.7);
+          const bellCurve = Math.sin((i / barCount) * Math.PI);
+          const barHeight = Math.max(
+            5,
+            bellCurve * (height * 0.75) * (0.35 + 0.35 * formant1 + 0.3 * formant2) * vocalMod
+          );
+
+          const gradient = ctx.createLinearGradient(0, height, 0, height - barHeight);
+          gradient.addColorStop(0, waveGrad1);
+          gradient.addColorStop(1, waveGrad2);
+
+          ctx.fillStyle = gradient;
+          ctx.fillRect(i * barWidth + 1.5, (height - barHeight) / 2, barWidth - 3, barHeight);
+        }
       } else {
-        const barCount = 48;
+        // Idle calm waveform preview
+        const barCount = 52;
         const barWidth = width / barCount;
         for (let i = 0; i < barCount; i++) {
-          const pseudoHeight = Math.sin((i / barCount) * Math.PI) * (height * 0.38) + 6;
+          const bellCurve = Math.sin((i / barCount) * Math.PI);
+          const pseudoHeight = bellCurve * (height * 0.36) + 4;
           ctx.fillStyle = borderColor;
-          ctx.fillRect(i * barWidth + 2, (height - pseudoHeight) / 2, barWidth - 3, pseudoHeight);
+          ctx.fillRect(i * barWidth + 1.5, (height - pseudoHeight) / 2, barWidth - 3, pseudoHeight);
         }
       }
 
       animationFrameRef.current = requestAnimationFrame(render);
     };
 
-    render();
+    animationFrameRef.current = requestAnimationFrame(render);
 
     return () => {
       if (animationFrameRef.current) {
@@ -176,7 +214,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
           <button
             type="button"
             onClick={() => audioService.togglePlayPause()}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent-primary)] hover:brightness-110 text-white shadow-md shadow-[var(--accent-primary)]/30 transition-all active:scale-95"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent-primary)] hover:brightness-110 text-white shadow-md shadow-[var(--accent-primary)]/30 transition-all active:scale-95 cursor-pointer"
             aria-label={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
@@ -185,7 +223,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
           <button
             type="button"
             onClick={() => audioService.stop()}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] cursor-pointer"
             aria-label="Stop"
           >
             <Square className="h-3.5 w-3.5" />
@@ -194,7 +232,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
           <button
             type="button"
             onClick={() => audioService.toggleLoop()}
-            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors ${
+            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors cursor-pointer ${
               isLooping
                 ? 'border-[var(--accent-primary)] bg-[var(--accent-subtle)] text-[var(--accent-primary)]'
                 : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
@@ -214,7 +252,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
               key={rate}
               type="button"
               onClick={() => audioService.setPlaybackRate(rate)}
-              className={`rounded px-2 py-0.5 text-xs font-mono font-medium transition-colors ${
+              className={`rounded px-2 py-0.5 text-xs font-mono font-medium transition-colors cursor-pointer ${
                 playbackRate === rate
                   ? 'bg-[var(--accent-primary)] text-white'
                   : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
@@ -230,7 +268,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
           <button
             type="button"
             onClick={() => audioService.setVolume(volume > 0 ? 0 : 1)}
-            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             {volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </button>

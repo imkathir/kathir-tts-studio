@@ -55,6 +55,7 @@ export default function App() {
     voice: string;
     gender: 'female' | 'male';
     language: string;
+    languageName?: string;
     speechStyle: string;
     sampleRate: number;
     bitrate: string;

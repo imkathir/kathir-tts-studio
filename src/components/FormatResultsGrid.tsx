@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Download, Play, FolderDown, Music, Check, Globe, User, Smartphone, Apple, Disc, Loader2 } from 'lucide-react';
 import { AudioJob, FormatItem } from '../types';
 import { audioService } from '../services/audio-service';
+import { generateClientZipBlob } from '../utils/client-tts';
 
 interface FormatResultsGridProps {
   job: AudioJob;
@@ -30,30 +31,38 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  const safeJobId = job.jobId || job.id || 'Audio';
+
   const handleDownloadFormat = async (item: FormatItem) => {
     setDownloadingFormats((prev) => ({ ...prev, [item.format]: 'downloading' }));
 
     try {
-      // 1. Fetch file as binary blob
-      const res = await fetch(item.downloadUrl);
-      if (!res.ok) {
-        throw new Error(`Server returned HTTP ${res.status}`);
+      let downloadHref = item.downloadUrl;
+      let shouldRevoke = false;
+
+      // If it's not already a client-side blob URL, fetch as blob first to ensure direct download
+      if (!item.downloadUrl.startsWith('blob:')) {
+        const res = await fetch(item.downloadUrl);
+        if (!res.ok) {
+          throw new Error(`Server returned HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        downloadHref = window.URL.createObjectURL(blob);
+        shouldRevoke = true;
       }
 
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      // 2. Programmatically create and trigger download link
+      // Programmatically create and trigger download link
       const link = document.createElement('a');
-      link.href = blobUrl;
+      link.href = downloadHref;
       link.download = item.fileName;
       link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      // Clean up blob URL after delay
-      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 3000);
+      if (shouldRevoke) {
+        setTimeout(() => window.URL.revokeObjectURL(downloadHref), 5000);
+      }
 
       setDownloadingFormats((prev) => ({ ...prev, [item.format]: 'done' }));
       setTimeout(() => {
@@ -64,8 +73,8 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
         });
       }, 2500);
     } catch (err) {
-      console.warn('Direct blob download error, triggering fallback navigation:', err);
-      // Fallback: standard anchor navigation
+      console.warn('Direct blob download error:', err);
+      // Fallback: create client-side download anchor
       try {
         const fallback = document.createElement('a');
         fallback.href = item.downloadUrl;
@@ -76,7 +85,7 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
         fallback.click();
         document.body.removeChild(fallback);
       } catch (e) {
-        window.location.href = item.downloadUrl;
+        console.error('Fallback download failed:', e);
       }
 
       setDownloadingFormats((prev) => ({ ...prev, [item.format]: 'error' }));
@@ -92,7 +101,27 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
 
   const handleDownloadZip = async () => {
     setIsDownloadingZip(true);
+    const zipFilename = `kathirStudio_${safeJobId}_All_Formats.zip`;
+
     try {
+      const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.includes('github.io');
+
+      // On GitHub Pages or when zipDownloadUrl is a blob or points to client, bundle client-side with JSZip
+      if (isGitHubPages || !job.zipDownloadUrl || job.zipDownloadUrl.startsWith('blob:')) {
+        const zipBlob = await generateClientZipBlob(job);
+        const blobUrl = window.URL.createObjectURL(zipBlob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = zipFilename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 5000);
+        return;
+      }
+
+      // Otherwise fetch from server
       const res = await fetch(job.zipDownloadUrl);
       if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
 
@@ -100,16 +129,29 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = `kathirStudio_${job.id}_All_Formats.zip`;
+      link.download = zipFilename;
       link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 3000);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 5000);
     } catch (err) {
-      console.warn('ZIP blob download failed, falling back to direct location:', err);
-      window.location.href = job.zipDownloadUrl;
+      console.warn('Server ZIP download failed, generating client-side ZIP fallback:', err);
+      try {
+        const zipBlob = await generateClientZipBlob(job);
+        const blobUrl = window.URL.createObjectURL(zipBlob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = zipFilename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 5000);
+      } catch (clientErr) {
+        console.error('Client zip generation also failed:', clientErr);
+      }
     } finally {
       setIsDownloadingZip(false);
     }
@@ -187,7 +229,7 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
             <button
               type="button"
               onClick={() => setFilter('all')}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
                 filter === 'all'
                   ? 'bg-[var(--accent-primary)] text-white shadow-sm'
                   : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-color)]'
@@ -199,7 +241,7 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
             <button
               type="button"
               onClick={() => setFilter('apple')}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
                 filter === 'apple'
                   ? 'bg-[var(--accent-primary)] text-white shadow-sm'
                   : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-color)]'
@@ -212,7 +254,7 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
             <button
               type="button"
               onClick={() => setFilter('universal')}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
                 filter === 'universal'
                   ? 'bg-[var(--accent-primary)] text-white shadow-sm'
                   : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-color)]'
@@ -225,7 +267,7 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
             <button
               type="button"
               onClick={() => setFilter('lossless')}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
                 filter === 'lossless'
                   ? 'bg-[var(--accent-primary)] text-white shadow-sm'
                   : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-color)]'
@@ -314,7 +356,7 @@ export const FormatResultsGrid: React.FC<FormatResultsGridProps> = ({
                 <button
                   type="button"
                   onClick={() => handlePlay(item)}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-semibold transition-all ${
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-semibold transition-all cursor-pointer ${
                     isCurrent && isPlaying
                       ? 'bg-[var(--accent-primary)] text-white shadow-md shadow-[var(--accent-primary)]/30'
                       : 'border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] hover:border-[var(--accent-primary)]'
