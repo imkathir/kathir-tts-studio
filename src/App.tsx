@@ -7,6 +7,7 @@ import { audioService } from './services/audio-service';
 import { AudioJob, FormatItem, ColorTheme } from './types';
 import { Volume2, Sparkles, CheckCircle2, ShieldCheck, Music2, Apple, Smartphone, Info } from 'lucide-react';
 import { createStaticPagesJob } from './utils/client-tts';
+import { Logo } from './components/Logo';
 
 export default function App() {
   const [theme, setTheme] = useState<ColorTheme>(() => {
@@ -183,9 +184,9 @@ export default function App() {
 
       {/* Main Container */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
-        {/* Studio Hero */}
+        {/* Studio Hero with Logo */}
         <div ref={studioRef} className="mb-8">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--accent-primary)] mb-2 font-medium">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--accent-primary)] mb-3 font-medium">
             <Volume2 className="h-4 w-4" />
             <span>Multi-Language Neural Speech Synthesis</span>
             <span>·</span>
@@ -200,12 +201,19 @@ export default function App() {
             </span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--text-primary)]">
-            kathirStudio <span className="text-[var(--text-muted)] font-normal text-xl sm:text-2xl block sm:inline sm:ml-2">— Universal Text to Audio Format Converter</span>
-          </h1>
-          <p className="mt-2 text-sm sm:text-base text-[var(--text-muted)] max-w-3xl leading-relaxed">
-            Convert text into natural speech across all 9 major audio formats. Full support for Apple iPhone native formats (<strong className="text-[var(--text-primary)]">M4R Ringtone, M4A AAC, Apple AIFF, Core Audio CAF</strong>) alongside Android &amp; Universal formats (<strong className="text-[var(--text-primary)]">MP3, WAV, FLAC, OGG, OPUS</strong>).
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <Logo size="xl" showText={false} className="hidden sm:flex shrink-0" />
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--text-primary)]">
+                <span>kathir</span>
+                <span className="text-[var(--accent-primary)]">Studio</span>{' '}
+                <span className="text-[var(--text-muted)] font-normal text-xl sm:text-2xl block sm:inline sm:ml-2">— Universal Text to Audio Format Converter</span>
+              </h1>
+              <p className="mt-2 text-sm sm:text-base text-[var(--text-muted)] max-w-3xl leading-relaxed">
+                Convert text into natural speech across all 9 major audio formats. Full support for Apple iPhone native formats (<strong className="text-[var(--text-primary)]">M4R Ringtone, M4A AAC, Apple AIFF, Core Audio CAF</strong>) alongside Android &amp; Universal formats (<strong className="text-[var(--text-primary)]">MP3, WAV, FLAC, OGG, OPUS</strong>).
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Studio Layout */}
@@ -286,13 +294,17 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-[var(--border-color)] bg-[var(--bg-main)] py-6 text-center text-xs text-[var(--text-muted)] transition-colors">
         <div className="mx-auto max-w-7xl px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-[var(--text-primary)]">kathirStudio</span>
+          <div className="flex items-center gap-2.5">
+            <Logo size="sm" showText={false} />
+            <span className="font-semibold text-[var(--text-primary)]">
+              <span>kathir</span>
+              <span className="text-[var(--accent-primary)] font-bold">Studio</span>
+            </span>
             <span>·</span>
             <span>Universal Text to Audio Format Converter</span>
           </div>
           <div className="text-[var(--text-muted)]">
-            100% Free Neural Speech Engine &amp; Container FFmpeg Transcoding
+            Client-Side Speech Synthesis Engine &amp; Multi-Format Audio Package
           </div>
         </div>
       </footer>

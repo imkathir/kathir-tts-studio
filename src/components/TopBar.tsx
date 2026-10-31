@@ -1,6 +1,7 @@
 import React from 'react';
-import { Volume2, Sparkles, Palette, Check } from 'lucide-react';
+import { Sparkles, Palette, Check } from 'lucide-react';
 import { ColorTheme } from '../types';
+import { Logo } from './Logo';
 
 interface TopBarProps {
   onScrollToFormats: () => void;
@@ -27,20 +28,21 @@ export const TopBar: React.FC<TopBarProps> = ({
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[var(--border-color)] bg-[var(--bg-main)]/90 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-3.5">
-        {/* Zone 1: Brand title */}
+        {/* Zone 1: Brand Logo & Title */}
         <a
           href="/"
           onClick={(e) => {
             e.preventDefault();
             onScrollToStudio();
           }}
-          className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-[var(--text-primary)] whitespace-nowrap shrink-0 hover:opacity-90 transition-opacity"
+          className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-[var(--text-primary)] whitespace-nowrap shrink-0 hover:opacity-95 transition-opacity"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-primary)] text-white shadow-sm shadow-[var(--accent-primary)]/20">
-            <Volume2 className="h-4.5 w-4.5" />
-          </div>
+          <Logo size="md" showText={false} />
           <span className="flex items-baseline gap-2">
-            <span className="font-extrabold tracking-tight">kathirStudio</span>
+            <span className="font-extrabold tracking-tight">
+              <span>kathir</span>
+              <span className="text-[var(--accent-primary)] font-black">Studio</span>
+            </span>
             <span className="hidden lg:inline text-xs font-normal text-[var(--text-muted)] border-l border-[var(--border-color)] pl-2">
               Universal Text to Audio Format Converter
             </span>
