@@ -15,7 +15,7 @@ import {
   Disc,
   AlertCircle,
 } from 'lucide-react';
-import { PresetTemplate, FormatOption } from '../types';
+import { PresetTemplate, FormatOption, ConversionProgressInfo } from '../types';
 import { SUPPORTED_LANGUAGES, detectLanguage } from '../utils/language';
 
 export const AVAILABLE_FORMATS: FormatOption[] = [
@@ -114,6 +114,7 @@ interface AudioInputPanelProps {
   }) => void;
   isConverting: boolean;
   conversionProgress: string;
+  progressInfo?: ConversionProgressInfo | null;
 }
 
 const PRESETS: PresetTemplate[] = [
@@ -189,6 +190,7 @@ export const AudioInputPanel: React.FC<AudioInputPanelProps> = ({
   onConvert,
   isConverting,
   conversionProgress,
+  progressInfo,
 }) => {
   const [text, setText] = useState<string>(
     'Welcome to Kathir Text to Speech Studio. Convert any text into crystal clear audio files instantly.'
@@ -869,6 +871,72 @@ export const AudioInputPanel: React.FC<AudioInputPanelProps> = ({
             </div>
           )}
         </div>
+
+        {/* Real-Time Conversion & Chunk Progress Indicator for Long & Short Texts */}
+        {isConverting && (
+          <div className="rounded-xl border border-[var(--accent-primary)]/40 bg-[var(--accent-primary)]/5 p-4 sm:p-5 shadow-inner transition-all animate-fadeIn">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1 shrink-0 px-2 py-1 rounded-md bg-[var(--accent-primary)]/15">
+                  <span className="h-4 w-1 rounded-full bg-[var(--accent-primary)] animate-pulse" />
+                  <span className="h-6 w-1 rounded-full bg-[var(--accent-primary)] animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="h-3 w-1 rounded-full bg-[var(--accent-primary)] animate-pulse" style={{ animationDelay: '300ms' }} />
+                  <span className="h-5 w-1 rounded-full bg-[var(--accent-primary)] animate-bounce" style={{ animationDelay: '450ms' }} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-[var(--text-primary)] flex flex-wrap items-center gap-2">
+                    <span>Synthesizing Voice Speech Audio...</span>
+                    {progressInfo && progressInfo.totalChunks > 1 && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[var(--accent-primary)]/20 text-[var(--accent-primary)] font-semibold border border-[var(--accent-primary)]/30">
+                        Section {progressInfo.currentChunk} of {progressInfo.totalChunks}
+                      </span>
+                    )}
+                  </h4>
+                  <p className="text-xs text-[var(--text-muted)] line-clamp-1 mt-0.5">
+                    {progressInfo?.statusText || conversionProgress || 'Converting text into genuine spoken audio...'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 self-end sm:self-auto shrink-0">
+                {progressInfo?.estimatedRemainingSec !== undefined && progressInfo.estimatedRemainingSec > 0 && (
+                  <span className="text-xs font-mono text-[var(--text-muted)] bg-[var(--bg-surface)] px-2.5 py-1 rounded-md border border-[var(--border-color)]">
+                    ~{progressInfo.estimatedRemainingSec}s remaining
+                  </span>
+                )}
+                <span className="text-base font-black font-mono text-[var(--accent-primary)] min-w-[3rem] text-right">
+                  {progressInfo?.percent ?? 5}%
+                </span>
+              </div>
+            </div>
+
+            {/* Glowing Multi-Color Progress Bar */}
+            <div className="w-full bg-[var(--bg-input)] rounded-full h-3 overflow-hidden border border-[var(--border-color)] relative">
+              <div
+                className="bg-gradient-to-r from-[var(--accent-primary)] via-purple-500 to-pink-500 h-full rounded-full transition-all duration-300 relative overflow-hidden"
+                style={{ width: `${Math.max(4, Math.min(100, progressInfo?.percent ?? 8))}%` }}
+              >
+                <div className="absolute inset-0 bg-white/20 animate-pulse" />
+              </div>
+            </div>
+
+            {/* Micro Details Bar */}
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
+              <span>
+                {progressInfo && progressInfo.totalChars > 0 ? (
+                  <>
+                    Characters processed: <strong className="text-[var(--text-primary)] font-mono">{progressInfo.charsProcessed.toLocaleString()}</strong> / {progressInfo.totalChars.toLocaleString()}
+                  </>
+                ) : (
+                  <span>Processing sentence chunks to preserve authentic speech cadence...</span>
+                )}
+              </span>
+              <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3 inline" /> Zero "hmm" tones · Genuine spoken words
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Action Button */}
         <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[var(--border-color)]">

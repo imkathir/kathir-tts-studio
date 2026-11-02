@@ -56,3 +56,14 @@ export interface LanguageInfo {
   nativeName: string;
   flag: string;
 }
+
+export interface ConversionProgressInfo {
+  status: 'analyzing' | 'synthesizing' | 'encoding' | 'completed';
+  percent: number;
+  currentChunk: number;
+  totalChunks: number;
+  statusText: string;
+  charsProcessed: number;
+  totalChars: number;
+  estimatedRemainingSec?: number;
+}

@@ -4,7 +4,7 @@ import { AudioInputPanel } from './components/AudioInputPanel';
 import { WaveformPlayer } from './components/WaveformPlayer';
 import { FormatResultsGrid } from './components/FormatResultsGrid';
 import { audioService } from './services/audio-service';
-import { AudioJob, FormatItem, ColorTheme } from './types';
+import { AudioJob, FormatItem, ColorTheme, ConversionProgressInfo } from './types';
 import { Volume2, Sparkles, CheckCircle2, ShieldCheck, Music2, Apple, Smartphone, Info } from 'lucide-react';
 import { createStaticPagesJob } from './utils/client-tts';
 import { Logo } from './components/Logo';
@@ -19,6 +19,7 @@ export default function App() {
   const [activeFormat, setActiveFormat] = useState<FormatItem | null>(null);
   const [isConverting, setIsConverting] = useState<boolean>(false);
   const [conversionProgress, setConversionProgress] = useState<string>('');
+  const [progressInfo, setProgressInfo] = useState<ConversionProgressInfo | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
@@ -64,21 +65,31 @@ export default function App() {
     formats: string[];
   }) => {
     setIsConverting(true);
-    setConversionProgress(
-      params.text.length > 3000
-        ? `Synthesizing full document (${Math.round(params.text.length / 1000)}k chars) across all sections...`
-        : 'Synthesizing speech from text...'
-    );
+    const initialText =
+      params.text.length > 2000
+        ? `Preparing full document (${Math.round(params.text.length / 1000)}k chars) across sections...`
+        : 'Synthesizing speech from text...';
+    setConversionProgress(initialText);
+    setProgressInfo({
+      status: 'analyzing',
+      percent: 3,
+      currentChunk: 0,
+      totalChunks: Math.max(1, Math.ceil(params.text.length / 360)),
+      statusText: initialText,
+      charsProcessed: 0,
+      totalChars: params.text.length,
+    });
 
     const isGitHubPages = window.location.hostname.includes('github.io');
     const customBackend = localStorage.getItem('kathir_tts_backend_url') || '';
 
-    // On GitHub Pages (without custom backend), run the real client-side speech engine directly
-    // This prevents the 405 Method Not Allowed error from GitHub Pages static servers
+    // On GitHub Pages (or static hosting), execute the client-side speech engine with live chunk progress
     if (isGitHubPages && !customBackend) {
-      setConversionProgress('Synthesizing speech via Google Neural Voice Engine...');
       try {
-        const clientJob = createStaticPagesJob(params);
+        const clientJob = await createStaticPagesJob(params, (info) => {
+          setProgressInfo(info);
+          setConversionProgress(info.statusText);
+        });
         setCurrentJob(clientJob);
         audioService.currentJob = clientJob;
 
@@ -91,6 +102,7 @@ export default function App() {
         console.error('Client speech synthesis error:', err);
       } finally {
         setIsConverting(false);
+        setProgressInfo(null);
         setConversionProgress('');
       }
       return;
@@ -109,7 +121,10 @@ export default function App() {
       });
 
       if (!res.ok) {
-        const clientJob = createStaticPagesJob(params);
+        const clientJob = await createStaticPagesJob(params, (info) => {
+          setProgressInfo(info);
+          setConversionProgress(info.statusText);
+        });
         setCurrentJob(clientJob);
         audioService.currentJob = clientJob;
         const defaultFmt = clientJob.formats.find((f) => f.format === 'mp3') || clientJob.formats[0];
@@ -135,7 +150,10 @@ export default function App() {
       }
     } catch (err: any) {
       console.warn('Backend server unreachable, falling back to client-side speech engine:', err);
-      const clientJob = createStaticPagesJob(params);
+      const clientJob = await createStaticPagesJob(params, (info) => {
+        setProgressInfo(info);
+        setConversionProgress(info.statusText);
+      });
       setCurrentJob(clientJob);
       audioService.currentJob = clientJob;
       const defaultFmt = clientJob.formats.find((f) => f.format === 'mp3') || clientJob.formats[0];
@@ -145,6 +163,7 @@ export default function App() {
       }
     } finally {
       setIsConverting(false);
+      setProgressInfo(null);
       setConversionProgress('');
     }
   };
@@ -223,6 +242,7 @@ export default function App() {
             onConvert={handleConvert}
             isConverting={isConverting}
             conversionProgress={conversionProgress}
+            progressInfo={progressInfo}
           />
 
           {/* Waveform Player */}

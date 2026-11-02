@@ -8,3 +8,6 @@ function da(b){throw b}var qa=void 0,Fa=null,La={noInitialRun:!0},Ya=[],jb=typeo
   return self.ret;
 }
 
+
+if (typeof window !== "undefined") { window.generateSpeech = generateSpeech; }
+if (typeof globalThis !== "undefined") { globalThis.generateSpeech = generateSpeech; }
